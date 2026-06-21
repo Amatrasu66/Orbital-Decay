@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Orbital Decay</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☼</text></svg>">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:#050510;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-canvas{display:block;cursor:default}
+html,body{width:100%;height:100%;min-height:100dvh;overflow:hidden;background:#050510;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+body{position:fixed;inset:0}
+canvas{display:block;cursor:default;width:100vw;height:100dvh;touch-action:none}
 </style>
 </head>
 <body>
@@ -318,6 +319,67 @@ var bgStars=[];
 var bgCvs=null;
 
 var menuHoloAngle=0;
+var uiScale=1;
+
+function getViewportSize(){
+  var vv=window.visualViewport;
+  var vw=vv&&vv.width?vv.width:window.innerWidth;
+  var vh=vv&&vv.height?vv.height:window.innerHeight;
+  return {w:Math.max(1,Math.floor(vw)),h:Math.max(1,Math.floor(vh))};
+}
+
+function clampUI(v,lo,hi){return v<lo?lo:v>hi?hi:v;}
+
+function drawTouchOverlay(){
+  if(!isTouch||state!=='playing')return;
+  ctx.save();
+  var zoneH=Math.max(92,h*0.18);
+  var top=h-zoneH;
+
+  var leftG=ctx.createLinearGradient(0,top,w*0.5,h);
+  leftG.addColorStop(0,'rgba(80,160,255,0.16)');
+  leftG.addColorStop(1,'rgba(80,160,255,0.03)');
+  ctx.fillStyle=leftG;
+  ctx.fillRect(0,top,w*0.5,zoneH);
+
+  var rightG=ctx.createLinearGradient(w*0.5,top,w,h);
+  rightG.addColorStop(0,'rgba(255,170,60,0.03)');
+  rightG.addColorStop(1,'rgba(255,170,60,0.16)');
+  ctx.fillStyle=rightG;
+  ctx.fillRect(w*0.5,top,w*0.5,zoneH);
+
+  ctx.strokeStyle='rgba(255,255,255,0.08)';
+  ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(w*0.5,top);ctx.lineTo(w*0.5,h);ctx.stroke();
+
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.font='bold '+Math.max(12,Math.min(16,w*0.04))+'px "Courier New",Consolas,monospace';
+  ctx.fillText('BRAKE',w*0.25,top+zoneH*0.38);
+  ctx.fillText('BOOST',w*0.75,top+zoneH*0.38);
+
+  ctx.fillStyle='rgba(255,255,255,0.28)';
+  ctx.font='10px "Courier New",Consolas,monospace';
+  ctx.fillText('tap / hold',w*0.25,top+zoneH*0.62);
+  ctx.fillText('tap / hold',w*0.75,top+zoneH*0.62);
+  ctx.restore();
+}
+
+function getPowerupLayout(){
+  var cardW=Math.min(150,w*0.27),cardH=Math.min(210,h*0.38),gap=16;
+  var totalW=cardW*3+gap*2;
+  if(totalW<=w-24&&h>=420){
+    return {mode:'row',cardW:cardW,cardH:cardH,gap:gap,startX:cx-totalW/2,startY:Math.min(cy-20,h*0.3)};
+  }
+  var sw=Math.min(320,w*0.86),sh=Math.min(92,Math.max(68,h*0.11));
+  return {mode:'stack',cardW:sw,cardH:sh,gap:12,startX:cx-sw/2,startY:Math.max(110,Math.min(h*0.22,cy-100))};
+}
+
+function isMenuBtn(x,y,bw,bh){
+  var padX=Math.max(6,8*(uiScale||1));
+  var padY=Math.max(6,6*(uiScale||1));
+  return mouseX>=x-padX&&mouseX<=x+bw+padX&&mouseY>=y-padY&&mouseY<=y+bh+padY;
+}
 
 function curShipSkin(){return SHIP_SKINS[save.shipSkin]||SHIP_SKINS[0];}
 function curStarSkin(){return STAR_SKINS[save.starSkin]||STAR_SKINS[0];}
@@ -328,12 +390,17 @@ function starR(){var d=diff();return gameScale*(CFG.STAR_R+Math.sin(_rt*(2+d*3))
    RESIZE / BACKGROUND
    ================================================================ */
 function resize(){
+  var vp=getViewportSize();
+  w=vp.w;h=vp.h;
   var dpr=Math.min(window.devicePixelRatio||1,2);
-  w=window.innerWidth;h=window.innerHeight;
-  cvs.width=w*dpr;cvs.height=h*dpr;
+  cvs.width=Math.max(1,Math.round(w*dpr));
+  cvs.height=Math.max(1,Math.round(h*dpr));
+  cvs.style.width=w+'px';
+  cvs.style.height=h+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   cx=w/2;cy=h/2;
-  // Game radius must fit ENTIRELY on screen — leave margin for HUD
+  uiScale=clampUI(Math.min(w/430,h/760),0.72,1.35);
+  // Game radius must fit entirely on screen — leave margin for HUD
   maxR=Math.min(w*0.46,h*0.44);
   // Scale star/ship sizes proportionally to game area
   gameScale=maxR/320;
@@ -417,6 +484,10 @@ function setupInput(){
   });
 
   window.addEventListener('resize',function(){resize();});
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',function(){resize();});
+    window.visualViewport.addEventListener('scroll',function(){resize();});
+  }
 
   cvs.addEventListener('click',function(e){handleClick();});
 }
@@ -873,7 +944,10 @@ function draw(){
   if(state==='playing'||state==='paused'||state==='powerupSelect'){drawSat();drawProbeGuide();}
   renderParticles(ctx);drawDanger();drawVignette();
   ctx.restore();
-  if(state==='playing')drawHUD();
+  if(state==='playing'){
+    drawTouchOverlay();
+    drawHUD();
+  }
   if(state==='menu')drawMenu();
   if(state==='modeSelect')drawModeSelect();
   if(state==='paused')drawPause();
@@ -1660,15 +1734,13 @@ function drawPowerupSelect(){
 
   if(!powerupChoices)return;
 
-  var cardW=Math.min(150,w*0.27),cardH=Math.min(210,h*0.38);
-  var gap=16;
-  var totalW=cardW*3+gap*2;
-  var startX=cx-totalW/2;
-  var startY=Math.min(cy-20,h*0.3);
+  var layout=getPowerupLayout();
+  var cardW=layout.cardW,cardH=layout.cardH,gap=layout.gap,startX=layout.startX,startY=layout.startY;
 
   for(var i=0;i<powerupChoices.length;i++){
     var pw=powerupChoices[i];
-    var x=startX+i*(cardW+gap),y=startY;
+    var x=layout.mode==='row'?startX+i*(cardW+gap):startX;
+    var y=layout.mode==='row'?startY:startY+i*(cardH+gap);
     var hov=mouseX>=x&&mouseX<=x+cardW&&mouseY>=y&&mouseY<=y+cardH;
 
     // Card background
@@ -1699,7 +1771,6 @@ function drawPowerupSelect(){
 
     // Description
     ctx.fillStyle='rgba(200,210,220,0.6)';ctx.font='10px "Courier New",monospace';
-    // Word wrap for description
     var words=pw.desc.split(' ');
     var line1='',line2='';
     for(var wi=0;wi<words.length;wi++){
@@ -1711,32 +1782,17 @@ function drawPowerupSelect(){
 
     // Duration indicator
     if(pw.dur>0){
-      ctx.fillStyle='rgba(255,255,255,0.3)';ctx.font='9px "Courier New",monospace';
-      ctx.fillText(pw.dur+'s duration',x+cardW/2,y+135);
+      ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='10px "Courier New",monospace';
+      ctx.fillText(pw.dur+'s',x+cardW/2,y+cardH-18);
     }
 
-    // "SELECT" text at bottom
-    ctx.fillStyle=hov?'#ffffff':'rgba(255,255,255,0.4)';
-    ctx.font='bold 11px "Courier New",monospace';
-    ctx.fillText('TAP TO SELECT',x+cardW/2,y+cardH-15);
-  }
-
-  // Timer bar
-  if(powerupSelectTimer>0){
-    var timerFrac=powerupSelectTimer/CFG.PW_SELECT_TIME;
-    var timerW=Math.min(300,w*0.6);
-    var timerX=cx-timerW/2,timerY=startY+cardH+20;
-    ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(timerX,timerY,timerW,6);
-    ctx.fillStyle='rgba(255,140,0,0.5)';ctx.fillRect(timerX,timerY,timerW*timerFrac,6);
-    ctx.fillStyle='rgba(255,255,255,0.3)';ctx.font='10px "Courier New",monospace';
-    ctx.fillText('Auto-skip in '+Math.ceil(powerupSelectTimer)+'s',cx,timerY+18);
+    if(hov){
+      ctx.fillStyle='rgba(255,255,255,0.18)';
+      ctx.fillRect(x+4,y+4,cardW-8,cardH-8);
+    }
   }
 }
 
-/* ================================================================
-   CLICK HANDLER
-   ================================================================ */
-function isMenuBtn(bx,by,bw,bh){return mouseX>=bx&&mouseX<=bx+bw&&mouseY>=by&&mouseY<=by+bh;}
 
 function handleClick(){
   // Universal buttons: home and back (on all non-menu screens)
@@ -1814,14 +1870,11 @@ function handleClick(){
     }
   }else if(state==='powerupSelect'){
     if(!powerupChoices)return;
-    var cardW=Math.min(150,w*0.27),cardH=Math.min(210,h*0.38);
-    var gap=16;
-    var totalW=cardW*3+gap*2;
-    var startX=cx-totalW/2;
-    var startY=Math.min(cy-20,h*0.3);
+    var layout=getPowerupLayout();
     for(var i=0;i<powerupChoices.length;i++){
-      var x=startX+i*(cardW+gap),y=startY;
-      if(isMenuBtn(x,y,cardW,cardH)){selectPowerup(i);break;}
+      var x=layout.mode==='row'?layout.startX+i*(layout.cardW+layout.gap):layout.startX;
+      var y=layout.mode==='row'?layout.startY:layout.startY+i*(layout.cardH+layout.gap);
+      if(isMenuBtn(x,y,layout.cardW,layout.cardH)){selectPowerup(i);break;}
     }
   }
 }
